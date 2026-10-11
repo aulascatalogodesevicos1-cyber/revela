@@ -127,6 +127,34 @@ class UsbPtpCamera private constructor(
         }
     }
 
+    // ------------------------------------------------------------------ segunda tela
+
+    override val supportsLiveView: Boolean get() = sonyRemote
+    override val supportsMovie: Boolean get() = sonyRemote
+
+    /**
+     * Na Sony em PC Remoto, o objeto 0xFFFFC002 devolve o quadro ao vivo atual:
+     * um cabeçalho da Sony seguido de um JPEG. Recortamos só o JPEG.
+     */
+    override suspend fun liveViewFrame(): ByteArray? {
+        if (!sonyRemote) return null
+        val r = t.request(PtpCodes.OC_GET_OBJECT, PtpCodes.SONY_LIVEVIEW_HANDLE, timeoutMs = 3000)
+        if (!r.ok) return null
+        val d = r.data
+        var start = -1
+        for (i in 0 until d.size - 2) {
+            if (d[i] == 0xFF.toByte() && d[i + 1] == 0xD8.toByte() && d[i + 2] == 0xFF.toByte()) { start = i; break }
+        }
+        if (start < 0) return null
+        val end = BitmapIO.jpegEnd(d, start)
+        return if (end > start) d.copyOfRange(start, end) else d.copyOfRange(start, d.size)
+    }
+
+    override suspend fun setRecording(on: Boolean) {
+        if (!sonyRemote) return
+        sonyControl(PtpCodes.SONY_PROP_MOVIE, if (on) 2 else 1)
+    }
+
     private suspend fun sonyControl(prop: Int, value: Int) {
         val data = byteArrayOf((value and 0xFF).toByte(), ((value shr 8) and 0xFF).toByte())
         t.request(PtpCodes.SONY_SET_CONTROL_DEVICE_B, prop, dataOut = data).requireOk("Controle Sony")

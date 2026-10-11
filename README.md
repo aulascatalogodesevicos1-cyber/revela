@@ -10,6 +10,13 @@ App nativo em **Kotlin + Jetpack Compose** (Android 10+).
 - Importar JPEG, HEIF/HEIC, PNG e RAW (ARW, CR2, CR3, NEF, RAF, RW2, ORF, DNG…). Do RAW, o app usa a prévia JPEG embutida em resolução máxima e guarda o RAW junto.
 - Segurar uma foto → apagar.
 
+**Segunda tela (monitor ao vivo)**
+- Logo abaixo da Captura vinculada no hub. Usa a mesma conexão USB em PC Remoto da ZV-E10 e mostra a imagem ao vivo da câmera (quadros JPEG do objeto 0xFFFFC002 da Sony).
+- Tela cheia, sempre acesa, brilho máximo opcional; funciona deitado ou em pé.
+- Grade dos terços com cruz central, guias de corte 9:16 / 1:1 / 4:5 (área de fora escurecida), espelhar (para vlog), contador de fps.
+- Botão de foto e botão REC (iniciar/parar vídeo) com cronômetro e borda vermelha durante a gravação.
+- Toque na imagem para mostrar/esconder os controles (somem sozinhos após 4 s).
+
 **Editor (não destrutivo, salva sozinho)**
 - **Presets**: 8 prontos + os seus (salvar atual / segurar para apagar), com miniatura da própria foto.
 - **Luz**: Exposição, Contraste, Realces, Sombras, Brancos, Pretos.
@@ -73,6 +80,8 @@ app/src/main/java/com/revela/app/
 ```
 
 ## Limitações conhecidas / próximos passos
+
+- A Segunda tela usa a prévia ao vivo do PC Remoto (resolução e fps de monitor, tipicamente 15–30 fps). Outro caminho possível é o modo "Streaming USB" (UVC) da ZV-E10, que exigiria uma biblioteca UVC nativa.
 
 - O revelador trabalha sobre a prévia JPEG do RAW (não decodifica o sensor). Revelação RAW real exigiria uma biblioteca nativa como LibRaw via NDK.
 - O processamento é em CPU (multithread). Para prévias em tempo real em fotos muito grandes, um próximo passo é portar o pipeline para GPU (AGSL `RuntimeShader` no Android 13+ ou OpenGL ES).

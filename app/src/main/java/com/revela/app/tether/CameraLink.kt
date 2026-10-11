@@ -17,6 +17,17 @@ interface CameraLink {
 
     suspend fun trigger()
 
+    /** Se a câmera envia a imagem ao vivo (usada pela Segunda tela). */
+    val supportsLiveView: Boolean get() = false
+
+    /** Um quadro JPEG da imagem ao vivo, ou null se nenhum estiver pronto. */
+    suspend fun liveViewFrame(): ByteArray? = null
+
+    /** Se o app consegue iniciar/parar a gravação de vídeo. */
+    val supportsMovie: Boolean get() = false
+
+    suspend fun setRecording(on: Boolean) {}
+
     fun close()
 }
 

@@ -40,7 +40,9 @@ object PtpCodes {
     const val SONY_EC_OBJECT_ADDED = 0xC201
     const val SONY_PROP_AUTOFOCUS = 0xD2C1   // S1 (meio-clique)
     const val SONY_PROP_CAPTURE = 0xD2C2     // S2 (disparo)
+    const val SONY_PROP_MOVIE = 0xD2C8       // gravar vídeo (2 = iniciar, 1 = parar)
     const val SONY_OBJECT_IN_MEMORY_HANDLE = 0xFFFFC001.toInt()
+    const val SONY_LIVEVIEW_HANDLE = 0xFFFFC002.toInt()
 
     const val VENDOR_SONY = 0x054C
 

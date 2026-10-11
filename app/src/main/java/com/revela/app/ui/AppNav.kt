@@ -11,6 +11,7 @@ import androidx.navigation.navArgument
 import com.revela.app.tether.TetherManager
 import com.revela.app.ui.editor.EditorScreen
 import com.revela.app.ui.hub.HubScreen
+import com.revela.app.ui.monitor.SecondScreen
 import com.revela.app.ui.tether.TetherScreen
 
 @Composable
@@ -29,6 +30,7 @@ fun AppNav(attachedCamera: UsbDevice?, onAttachedCameraHandled: () -> Unit) {
         composable("hub") {
             HubScreen(
                 onOpenTether = { nav.navigate("tether") { launchSingleTop = true } },
+                onOpenMonitor = { nav.navigate("monitor") { launchSingleTop = true } },
                 onOpenPhoto = { id -> nav.navigate("editor/$id") },
             )
         }
@@ -37,6 +39,9 @@ fun AppNav(attachedCamera: UsbDevice?, onAttachedCameraHandled: () -> Unit) {
                 onBack = { nav.popBackStack() },
                 onOpenPhoto = { id -> nav.navigate("editor/$id") },
             )
+        }
+        composable("monitor") {
+            SecondScreen(onBack = { nav.popBackStack() })
         }
         composable(
             "editor/{id}",

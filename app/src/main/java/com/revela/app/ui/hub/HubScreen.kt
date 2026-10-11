@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.Monitor
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,7 +72,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun HubScreen(onOpenTether: () -> Unit, onOpenPhoto: (String) -> Unit) {
+fun HubScreen(onOpenTether: () -> Unit, onOpenMonitor: () -> Unit, onOpenPhoto: (String) -> Unit) {
     val repo = PhotoRepository.instance
     val photos by repo.photos.collectAsStateWithLifecycle()
     val status by TetherManager.status.collectAsStateWithLifecycle()
@@ -113,6 +114,9 @@ fun HubScreen(onOpenTether: () -> Unit, onOpenPhoto: (String) -> Unit) {
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 TetherCard(status = status, onClick = onOpenTether)
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                MonitorCard(connected = status is TetherStatus.Connected, onClick = onOpenMonitor)
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Row(
@@ -213,6 +217,39 @@ private fun TetherCard(status: TetherStatus, onClick: () -> Unit) {
             }
             Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = TextDim)
         }
+    }
+}
+
+@Composable
+private fun MonitorCard(connected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Surface1)
+            .border(1.dp, Color(0xFF2E2E34), RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(Surface2),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Outlined.Monitor, null, tint = Color(0xFFEDEDF0))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Segunda tela", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                if (connected) "Ver ao vivo o que a câmera está filmando"
+                else "Monitor ao vivo da câmera · grade, guias 9:16 e REC",
+                color = TextDim, style = MaterialTheme.typography.labelMedium,
+            )
+        }
+        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = TextDim)
     }
 }
 
