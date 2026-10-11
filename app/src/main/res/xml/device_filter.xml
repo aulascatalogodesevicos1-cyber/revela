@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sony -->
+    <usb-device vendor-id="1356" />
+    <!-- Canon -->
+    <usb-device vendor-id="1193" />
+    <!-- Nikon -->
+    <usb-device vendor-id="1200" />
+    <!-- Fujifilm -->
+    <usb-device vendor-id="1227" />
+    <!-- Panasonic -->
+    <usb-device vendor-id="1242" />
+    <!-- OM System / Olympus -->
+    <usb-device vendor-id="1972" />
+</resources>

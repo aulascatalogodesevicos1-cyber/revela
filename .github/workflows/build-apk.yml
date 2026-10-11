@@ -1,0 +1,64 @@
+name: Gerar APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Compilar APK de teste
+        id: build
+        run: |
+          set -o pipefail
+          gradle assembleDebug --stacktrace 2>&1 | tee build.log
+
+      - name: Renomear APK
+        if: success()
+        run: cp app/build/outputs/apk/debug/app-debug.apk Revela-teste.apk
+
+      - name: Publicar APK (release "teste")
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: teste
+          name: Revela — versão de teste
+          prerelease: true
+          make_latest: false
+          files: Revela-teste.apk
+          body: |
+            APK de teste gerado automaticamente a partir do commit ${{ github.sha }}.
+            Baixe o Revela-teste.apk no celular e instale (permita "instalar apps desconhecidos").
+
+      - name: Guardar o APK no Actions
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Revela-teste
+          path: Revela-teste.apk
+
+      - name: Publicar log de erro (release "log-build")
+        if: failure()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: log-build
+          name: Log da última compilação com erro
+          prerelease: true
+          make_latest: false
+          files: build.log
