@@ -36,6 +36,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -95,6 +97,7 @@ fun TetherScreen(onBack: () -> Unit, onOpenPhoto: (String) -> Unit) {
         onDispose { view.keepScreenOn = false }
     }
 
+    var showDiag by remember { mutableStateOf(false) }
     val connected = status is TetherStatus.Connected
     val canTrigger = (status as? TetherStatus.Connected)?.canTrigger == true
 
@@ -106,6 +109,7 @@ fun TetherScreen(onBack: () -> Unit, onOpenPhoto: (String) -> Unit) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Voltar") }
                 },
                 actions = {
+                    TextButton(onClick = { showDiag = true }) { Text("Diagnóstico") }
                     if (status !is TetherStatus.Disconnected) {
                         IconButton(onClick = { TetherManager.disconnect() }) {
                             Icon(Icons.Outlined.LinkOff, "Desconectar")
@@ -124,15 +128,14 @@ fun TetherScreen(onBack: () -> Unit, onOpenPhoto: (String) -> Unit) {
                 status = status,
                 activity = activity,
                 onUsb = {
-                    val cams = UsbAccess.cameras(ctx)
-                    if (cams.isEmpty()) {
+                    if (!TetherManager.connectFirstUsb()) {
                         scope.launch {
-                            snackbar.showSnackbar(
-                                "Nenhuma câmera no USB. Na ZV-E10: Rede › Função PC Remoto › PC Remoto = Lig., método USB.",
+                            val r = snackbar.showSnackbar(
+                                "O celular não está vendo a câmera no USB. Veja o Diagnóstico.",
+                                actionLabel = "Abrir",
                             )
+                            if (r == SnackbarResult.ActionPerformed) showDiag = true
                         }
-                    } else {
-                        TetherManager.connectUsb(cams.first())
                     }
                 },
                 onWifi = { TetherManager.connectWifi() },
@@ -204,6 +207,7 @@ fun TetherScreen(onBack: () -> Unit, onOpenPhoto: (String) -> Unit) {
             }
         }
     }
+    if (showDiag) DiagnosticsDialog(onDismiss = { showDiag = false })
 }
 
 @Composable
@@ -315,7 +319,8 @@ private fun EmptyHint(connected: Boolean) {
                     "1. MENU › Rede › Conexão Smartphone › Conexão Smartphone = Desl.\n" +
                     "2. MENU › Rede › Função PC Remoto › PC Remoto = Lig.\n" +
                     "3. Método Conexão PC Remoto = USB · Destino salv. imagem = Só PC (ou PC+Câmera)\n" +
-                    "4. Ligue com cabo USB-C ↔ USB-C e toque em Cabo USB.\n\n" +
+                    "4. Ligue com cabo USB-C ↔ USB-C e toque em Cabo USB.\n" +
+                    "Se não conectar, toque em Diagnóstico (no topo) e copie o texto.\n\n" +
                     "Wi-Fi Sony: só modelos antigos com \"Smart Remote\" (a6000, a7 III…). A ZV-E10 usa o cabo.\n\n" +
                     "O preset escolhido acima já é aplicado em cada foto que chegar.",
                 color = TextDim,

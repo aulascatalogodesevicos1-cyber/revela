@@ -69,7 +69,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.revela.app.tether.TetherManager
 import com.revela.app.tether.TetherStatus
-import com.revela.app.tether.usb.UsbAccess
 import com.revela.app.ui.theme.Accent
 import com.revela.app.ui.theme.Danger
 import com.revela.app.ui.theme.Live
@@ -191,9 +190,7 @@ fun SecondScreen(onBack: () -> Unit) {
         } else {
             WaitingState(
                 connected = connected,
-                onConnect = {
-                    UsbAccess.cameras(ctx).firstOrNull()?.let { TetherManager.connectUsb(it) }
-                },
+                onConnect = { TetherManager.connectFirstUsb() },
                 status = status,
             )
         }

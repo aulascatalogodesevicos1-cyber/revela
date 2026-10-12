@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Sessão de captura vinculada: mantém a conexão com a câmera, recebe as fotos,
@@ -61,14 +62,30 @@ object TetherManager {
 
     fun connectUsb(device: UsbDevice) = start("USB") { status ->
         status("Pedindo permissão USB…")
-        if (!UsbAccess.ensurePermission(app, device)) throw IllegalStateException("Permissão USB negada")
+        TetherLog.add("Permissão USB: ${if (UsbAccess.hasPermission(app, device)) "já concedida" else "pedindo…"}")
+        val granted = withTimeoutOrNull(60_000) { UsbAccess.ensurePermission(app, device) }
+        TetherLog.add("Permissão USB: ${if (granted == true) "OK" else "negada/sem resposta"}")
+        if (granted != true) {
+            throw IllegalStateException("Permissão USB não concedida. Toque em Cabo USB de novo e aceite o aviso.")
+        }
         UsbPtpCamera.open(app, device, status)
+    }
+
+    /** Conecta na primeira câmera USB encontrada; devolve false se não houver nenhuma. */
+    fun connectFirstUsb(): Boolean {
+        val all = UsbAccess.allDevices(app)
+        TetherLog.add("Dispositivos USB vistos pelo Android: ${all.size}")
+        all.forEach { TetherLog.add(" • ${UsbAccess.describe(it)}") }
+        val cam = UsbAccess.cameras(app).firstOrNull() ?: return false
+        connectUsb(cam)
+        return true
     }
 
     fun connectWifi() = start("Wi-Fi") { status -> SonyWifiCamera.connect(app, status) }
 
     private fun start(via: String, factory: suspend (status: (String) -> Unit) -> CameraLink) {
         disconnect()
+        TetherLog.add("—— Nova conexão via $via (Android ${android.os.Build.VERSION.RELEASE}, ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}) ——")
         job = scope.launch {
             _status.value = TetherStatus.Connecting("Conectando via $via…")
             var l: CameraLink? = null
@@ -82,6 +99,7 @@ object TetherManager {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                TetherLog.add("Erro: ${e.javaClass.simpleName}: ${e.message}")
                 _status.value = TetherStatus.Failed(e.message ?: e.javaClass.simpleName)
             } finally {
                 l?.close()
@@ -100,6 +118,7 @@ object TetherManager {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                TetherLog.add("Falha no disparo: ${e.message}")
                 _activity.value = "Falha no disparo: ${e.message}"
             }
         }

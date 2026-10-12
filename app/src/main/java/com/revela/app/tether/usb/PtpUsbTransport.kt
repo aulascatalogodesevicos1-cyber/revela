@@ -3,6 +3,7 @@ package com.revela.app.tether.usb
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
+import com.revela.app.tether.TetherLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -38,6 +39,14 @@ class PtpUsbTransport(
 
     private val lock = Mutex()
     private var transactionId = 0
+
+    /** Registra cada operação no diagnóstico (desligado durante o fluxo ao vivo). */
+    @Volatile var verbose = true
+
+    /** O padrão PTP pede que o OpenSession use o número de transação 0. */
+    fun resetTransactions() {
+        transactionId = -1
+    }
     private val buf = ByteArray(256 * 1024)
     @Volatile private var closed = false
 
@@ -48,7 +57,19 @@ class PtpUsbTransport(
         timeoutMs: Int = 10_000,
         onProgress: ((Long, Long) -> Unit)? = null,
     ): Response = lock.withLock {
-        withContext(Dispatchers.IO) { doRequest(op, params, dataOut, timeoutMs, onProgress) }
+        withContext(Dispatchers.IO) {
+            val p = params.joinToString(",") { TetherLog.hex(it, 1) }
+            try {
+                val r = doRequest(op, params, dataOut, timeoutMs, onProgress)
+                if (verbose) {
+                    TetherLog.add("PTP ${TetherLog.hex(op)}($p) → ${PtpCodes.responseName(r.code)} · ${r.data.size} B")
+                }
+                r
+            } catch (e: Exception) {
+                TetherLog.add("PTP ${TetherLog.hex(op)}($p) ✕ ${e.message}")
+                throw e
+            }
+        }
     }
 
     private fun doRequest(

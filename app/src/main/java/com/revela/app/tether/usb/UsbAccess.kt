@@ -26,6 +26,24 @@ object UsbAccess {
 
     private val KNOWN_VENDORS = setOf(0x054C, 0x04A9, 0x04B0, 0x04CB, 0x04DA, 0x07B4)
 
+    /** Todos os dispositivos USB que o Android está vendo (para o diagnóstico). */
+    fun allDevices(ctx: Context): List<UsbDevice> =
+        ctx.getSystemService(UsbManager::class.java)?.deviceList?.values?.toList() ?: emptyList()
+
+    fun hasPermission(ctx: Context, d: UsbDevice): Boolean =
+        ctx.getSystemService(UsbManager::class.java)?.hasPermission(d) == true
+
+    fun describe(d: UsbDevice): String {
+        val vid = "%04X".format(d.vendorId)
+        val pid = "%04X".format(d.productId)
+        val name = listOfNotNull(d.manufacturerName, d.productName).joinToString(" ").ifBlank { d.deviceName }
+        val ifaces = (0 until d.interfaceCount).joinToString(" ") {
+            val i = d.getInterface(it)
+            "[classe ${i.interfaceClass}/${i.interfaceSubclass}/${i.interfaceProtocol}, ${i.endpointCount} ep]"
+        }
+        return "$name · VID $vid PID $pid · $ifaces"
+    }
+
     suspend fun ensurePermission(ctx: Context, device: UsbDevice): Boolean {
         val mgr = ctx.getSystemService(UsbManager::class.java) ?: return false
         if (mgr.hasPermission(device)) return true

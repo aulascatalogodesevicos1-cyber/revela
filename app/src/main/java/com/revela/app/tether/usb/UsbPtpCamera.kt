@@ -9,6 +9,7 @@ import android.hardware.usb.UsbManager
 import com.revela.app.imaging.BitmapIO
 import com.revela.app.tether.CameraLink
 import com.revela.app.tether.CapturedFile
+import com.revela.app.tether.TetherLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -45,10 +46,12 @@ class UsbPtpCamera private constructor(
         suspend fun open(ctx: Context, device: UsbDevice, status: (String) -> Unit): UsbPtpCamera =
             withContext(Dispatchers.IO) {
                 val mgr = ctx.getSystemService(UsbManager::class.java)
+                TetherLog.add("Dispositivo: ${UsbAccess.describe(device)}")
                 val iface = findPtpInterface(device) ?: throw IOException(
-                    "A câmera não expôs uma interface PTP. Na Sony, ative Menu › Rede/USB › " +
-                        "Conexão USB: \"PC Remoto\" (ou \"MTP\" para só importar).",
+                    "A câmera não expôs uma interface PTP. Na ZV-E10: Rede › Função PC Remoto › " +
+                        "PC Remoto = Lig. e Método Conexão = USB.",
                 )
+                TetherLog.add("Interface PTP #${iface.id}: ${iface.endpointCount} endpoints")
                 var epIn: UsbEndpoint? = null
                 var epOut: UsbEndpoint? = null
                 var epInt: UsbEndpoint? = null
@@ -63,25 +66,43 @@ class UsbPtpCamera private constructor(
                 if (epIn == null || epOut == null) throw IOException("Endpoints USB da câmera não encontrados")
 
                 val conn = mgr.openDevice(device) ?: throw IOException("Sem permissão para acessar a câmera USB")
-                if (!conn.claimInterface(iface, true)) {
+                var claimed = false
+                for (attempt in 1..3) {
+                    if (conn.claimInterface(iface, true)) { claimed = true; break }
+                    TetherLog.add("claimInterface falhou (tentativa $attempt)")
+                    delay(400)
+                }
+                if (!claimed) {
                     conn.close()
-                    throw IOException("Não foi possível assumir a interface USB (outro app está usando a câmera?)")
+                    throw IOException(
+                        "Outro app está usando a câmera. Feche apps de fotos/arquivos (ou o \"Transferência de arquivos\" " +
+                            "do Android), desconecte e conecte o cabo de novo.",
+                    )
                 }
                 val t = PtpUsbTransport(conn, iface, epIn, epOut, epInt)
                 try {
                     status("Abrindo sessão PTP…")
-                    val open = t.request(PtpCodes.OC_OPEN_SESSION, 1)
-                    if (!open.ok && open.code != PtpCodes.RC_SESSION_ALREADY_OPEN) open.requireOk("Abrir sessão")
+                    openSession(t)
 
                     var info = DeviceInfo.parse(t.request(PtpCodes.OC_GET_DEVICE_INFO).requireOk("Ler câmera").data)
+                    TetherLog.add(
+                        "Câmera: ${info.manufacturer} ${info.model} · ext \"${info.vendorExtension}\" · " +
+                            "${info.operations.size} operações · SDIO=${info.supports(PtpCodes.SONY_SDIO_CONNECT)}",
+                    )
                     val sony = device.vendorId == PtpCodes.VENDOR_SONY && info.supports(PtpCodes.SONY_SDIO_CONNECT)
+                    if (device.vendorId == PtpCodes.VENDOR_SONY && !sony) {
+                        TetherLog.add("Sony sem SDIO: provavelmente em modo MTP/Mass Storage, não em PC Remoto")
+                    }
                     if (sony) {
                         status("Conectando no modo PC Remoto da Sony…")
                         sonyHandshake(t)
                         info = DeviceInfo.parse(t.request(PtpCodes.OC_GET_DEVICE_INFO).requireOk("Ler câmera").data)
                     }
+                    TetherLog.add("Conectado (${if (sony) "Sony PC Remoto" else "PTP genérico"})")
+                    t.verbose = false
                     UsbPtpCamera(t, info, sony)
                 } catch (e: Exception) {
+                    TetherLog.add("Falhou: ${e.message}")
                     t.close()
                     throw e
                 }
@@ -100,15 +121,42 @@ class UsbPtpCamera private constructor(
             return null
         }
 
+        /**
+         * Abre a sessão PTP com o número de transação 0 (exigido pelo padrão e por algumas Sony).
+         * Se a câmera ficou com uma sessão presa de uma tentativa anterior, fecha e abre de novo.
+         */
+        private suspend fun openSession(t: PtpUsbTransport) {
+            t.resetTransactions()
+            val first = t.request(PtpCodes.OC_OPEN_SESSION, 1)
+            if (first.ok || first.code == PtpCodes.RC_SESSION_ALREADY_OPEN) return
+            TetherLog.add("Sessão recusada; fechando e tentando de novo")
+            runCatching { t.request(PtpCodes.OC_CLOSE_SESSION) }
+            delay(300)
+            t.resetTransactions()
+            val second = t.request(PtpCodes.OC_OPEN_SESSION, 1)
+            if (!second.ok && second.code != PtpCodes.RC_SESSION_ALREADY_OPEN) second.requireOk("Abrir sessão")
+        }
+
         /** Sequência de conexão SDIO (mesma usada pelo Imaging Edge e pelo libgphoto2). */
         private suspend fun sonyHandshake(t: PtpUsbTransport) {
-            t.request(PtpCodes.SONY_SDIO_CONNECT, 1, 0, 0).requireOk("Sony SDIO 1")
-            t.request(PtpCodes.SONY_SDIO_CONNECT, 2, 0, 0).requireOk("Sony SDIO 2")
-            // Versão do protocolo: modelos novos aceitam 0x12C, antigos 0xC8
-            val ext = t.request(PtpCodes.SONY_GET_SDIO_EXT_DEVICE_INFO, 0x12C)
-            if (!ext.ok) t.request(PtpCodes.SONY_GET_SDIO_EXT_DEVICE_INFO, 0xC8)
-            t.request(PtpCodes.SONY_SDIO_CONNECT, 3, 0, 0).requireOk("Sony SDIO 3")
-            delay(300)
+            sdio(t, 1)
+            sdio(t, 2)
+            // Versão do protocolo SDIO: 0xC8 (clássica) ou 0x12C (mais nova)
+            var ext = t.request(PtpCodes.SONY_GET_SDIO_EXT_DEVICE_INFO, 0xC8)
+            if (!ext.ok) ext = t.request(PtpCodes.SONY_GET_SDIO_EXT_DEVICE_INFO, 0x12C)
+            if (!ext.ok) TetherLog.add("Aviso: ExtDeviceInfo não respondeu OK, seguindo mesmo assim")
+            sdio(t, 3)
+            delay(500)
+        }
+
+        /** Passo SDIO com novas tentativas: a câmera responde "ocupada" enquanto troca de modo. */
+        private suspend fun sdio(t: PtpUsbTransport, step: Int) {
+            repeat(5) { attempt ->
+                val r = t.request(PtpCodes.SONY_SDIO_CONNECT, step, 0, 0)
+                if (r.ok) return
+                if (attempt == 4) r.requireOk("Sony SDIO $step")
+                delay(300)
+            }
         }
     }
 
