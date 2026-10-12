@@ -30,6 +30,10 @@ object UsbAccess {
     fun allDevices(ctx: Context): List<UsbDevice> =
         ctx.getSystemService(UsbManager::class.java)?.deviceList?.values?.toList() ?: emptyList()
 
+    /** Se o dispositivo expõe a interface de câmera (PTP / imagem estática). */
+    fun hasPtp(d: UsbDevice): Boolean =
+        (0 until d.interfaceCount).any { d.getInterface(it).interfaceClass == UsbConstants.USB_CLASS_STILL_IMAGE }
+
     fun hasPermission(ctx: Context, d: UsbDevice): Boolean =
         ctx.getSystemService(UsbManager::class.java)?.hasPermission(d) == true
 

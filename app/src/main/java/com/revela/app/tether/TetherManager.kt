@@ -1,9 +1,16 @@
 package com.revela.app.tether
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
+import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
+import java.io.IOException
 import com.revela.app.data.PhotoRepository
 import com.revela.app.model.BuiltInPresets
 import com.revela.app.tether.usb.UsbAccess
@@ -53,6 +60,7 @@ object TetherManager {
         app = ctx.applicationContext
         val prefs = app.getSharedPreferences("tether", Context.MODE_PRIVATE)
         _presetId.value = prefs.getString("presetId", null)
+        watchUsbEvents()
     }
 
     fun selectPreset(id: String?) {
@@ -60,25 +68,81 @@ object TetherManager {
         app.getSharedPreferences("tether", Context.MODE_PRIVATE).edit().putString("presetId", id).apply()
     }
 
-    fun connectUsb(device: UsbDevice) = start("USB") { status ->
+    /**
+     * Conecta por USB. Se a câmera ainda não estiver em modo PC Remoto (aparece sem a
+     * interface de câmera, ou nem aparece), espera até [WAIT_PTP_MS] ela trocar de modo.
+     */
+    fun connectUsb(device: UsbDevice?) = start("USB") { status ->
+        var dev = device?.takeIf { UsbAccess.hasPtp(it) }
+        if (dev == null) {
+            if (device != null) TetherLog.add("Sem interface de câmera: ${UsbAccess.describe(device)}")
+            TetherLog.add("Aguardando a câmera aparecer em modo PC Remoto (até ${WAIT_PTP_MS / 1000}s)…")
+            dev = waitForPtpDevice { secs ->
+                status(
+                    if (device != null) "Câmera detectada, esperando o modo PC Remoto… ${secs}s\nOlhe a tela da câmera."
+                    else "Esperando a câmera no cabo USB… ${secs}s",
+                )
+            } ?: throw IOException(
+                if (device != null || UsbAccess.allDevices(app).isNotEmpty())
+                    "A câmera está no cabo, mas não entrou em PC Remoto. Ligue a câmera, deixe-a na tela de " +
+                        "fotografar (fora do menu) e confira Rede › Função PC Remoto › PC Remoto = Lig., método USB."
+                else
+                    "O celular não está vendo a câmera no USB. Confira se a câmera está ligada, se o cabo " +
+                        "passa dados e se o OTG está ativo no celular.",
+            )
+            TetherLog.add("Câmera em PC Remoto apareceu: ${UsbAccess.describe(dev)}")
+        }
         status("Pedindo permissão USB…")
-        TetherLog.add("Permissão USB: ${if (UsbAccess.hasPermission(app, device)) "já concedida" else "pedindo…"}")
-        val granted = withTimeoutOrNull(60_000) { UsbAccess.ensurePermission(app, device) }
+        TetherLog.add("Permissão USB: ${if (UsbAccess.hasPermission(app, dev)) "já concedida" else "pedindo…"}")
+        val granted = withTimeoutOrNull(60_000) { UsbAccess.ensurePermission(app, dev) }
         TetherLog.add("Permissão USB: ${if (granted == true) "OK" else "negada/sem resposta"}")
         if (granted != true) {
             throw IllegalStateException("Permissão USB não concedida. Toque em Cabo USB de novo e aceite o aviso.")
         }
-        UsbPtpCamera.open(app, device, status)
+        UsbPtpCamera.open(app, dev, status)
     }
 
-    /** Conecta na primeira câmera USB encontrada; devolve false se não houver nenhuma. */
-    fun connectFirstUsb(): Boolean {
+    private suspend fun waitForPtpDevice(onTick: (Int) -> Unit): UsbDevice? {
+        val start = System.currentTimeMillis()
+        var lastSeen = ""
+        while (System.currentTimeMillis() - start < WAIT_PTP_MS) {
+            val all = UsbAccess.allDevices(app)
+            val seen = all.joinToString(" | ") { UsbAccess.describe(it) }.ifEmpty { "nenhum" }
+            if (seen != lastSeen) {
+                TetherLog.add("USB agora: $seen")
+                lastSeen = seen
+            }
+            all.firstOrNull { UsbAccess.hasPtp(it) }?.let { return it }
+            onTick(((WAIT_PTP_MS - (System.currentTimeMillis() - start)) / 1000).toInt())
+            delay(500)
+        }
+        return null
+    }
+
+    /** Toque em "Cabo USB": usa a câmera que estiver no cabo, ou espera ela aparecer. */
+    fun connectFirstUsb() {
         val all = UsbAccess.allDevices(app)
         TetherLog.add("Dispositivos USB vistos pelo Android: ${all.size}")
         all.forEach { TetherLog.add(" • ${UsbAccess.describe(it)}") }
-        val cam = UsbAccess.cameras(app).firstOrNull() ?: return false
-        connectUsb(cam)
-        return true
+        connectUsb(all.firstOrNull { UsbAccess.hasPtp(it) } ?: UsbAccess.cameras(app).firstOrNull())
+    }
+
+    private const val WAIT_PTP_MS = 45_000L
+
+    /** Registra no diagnóstico quando algo é ligado/desligado do USB. */
+    private fun watchUsbEvents() {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, intent: Intent) {
+                val dev = IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+                val what = if (intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED) "desconectado" else "conectado"
+                TetherLog.add("USB $what: ${dev?.let { UsbAccess.describe(it) } ?: "?"}")
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        }
+        ContextCompat.registerReceiver(app, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
     }
 
     fun connectWifi() = start("Wi-Fi") { status -> SonyWifiCamera.connect(app, status) }
